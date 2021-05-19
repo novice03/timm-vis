@@ -1,0 +1,11 @@
+LICENSE
+README.md
+pyproject.toml
+setup.cfg
+timm_vis/__init__.py
+timm_vis/helpers.py
+timm_vis/methods.py
+timm_vis.egg-info/PKG-INFO
+timm_vis.egg-info/SOURCES.txt
+timm_vis.egg-info/dependency_links.txt
+timm_vis.egg-info/top_level.txt
