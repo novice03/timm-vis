@@ -1,6 +1,6 @@
 ## PyTorch Image Models Visualizer
 
-Implementation of various visualization techniques for pytorch image classifiers. This library can be used to visualize and understand any PyTorch image classifier. This is NOT an official PyTorch library, nor is it affiliated with Ross Wightman's [pytorch-image-models](https://github.com/rwightman/pytorch-image-models) library. 
+Implementation of various visualization techniques for pytorch image classifiers. This library can be used to visualize and understand any PyTorch image classifier. This is NOT an official PyTorch library, nor is it affiliated with Ross Wightman's [pytorch-image-models](https://github.com/rwightman/pytorch-image-models) library. [details.ipynb](https://github.com/novice03/timm-vis/blob/main/details.ipynb) has visual examples of all methods implemented.
 
 Currently, the following methods are implemented:
 
