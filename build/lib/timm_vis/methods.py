@@ -42,12 +42,12 @@ def visualize_filters(model, filter_name = None, max_filters = 64, size = 128, f
     if save_path:
         fig.savefig(save_path)
 
-def visualize_activations(model, module, img_path, max_acts = 64, figsize = (16, 16), save_path = None):
+def visualize_activations(model, module, img_path, max_acts = 64, rgb = True, figsize = (16, 16), save_path = None):
     """
         Plots the activations of a module recorded during a forward pass on an image
     """
 
-    img_t = preprocess_image(img_path)
+    img_t = preprocess_image(img_path, rgb = rgb)
     acts = [0]
 
     def hook_fn(self, input, output):
@@ -75,8 +75,8 @@ def visualize_activations(model, module, img_path, max_acts = 64, figsize = (16,
     if save_path:
         fig.savefig(save_path)
 
-def maximally_activated_patches(model, img_path, patch_size = 448, stride = 100, num_patches = 5, figsize = (16, 16),
-                                    device = 'cuda', save_path = None):
+def maximally_activated_patches(model, img_path, patch_size = 448, stride = 100, num_patches = 5, rgb = True, 
+                                    figsize = (16, 16), device = 'cuda', save_path = None):
 
     """
         Plots the patches of an image that produce the highest activations
@@ -85,9 +85,9 @@ def maximally_activated_patches(model, img_path, patch_size = 448, stride = 100,
     model.eval()
     model.to(device)
     
-    img = Image.open(img_path).convert('RGB')
+    img = Image.open(img_path)
     img_mean = int(np.mean(np.asarray(img)))
-    img_t = preprocess_image(img_path).to(device)
+    img_t = preprocess_image(img_path, rgb = rgb).to(device)
     
     with torch.no_grad():
         out = model(img_t)
@@ -106,9 +106,12 @@ def maximally_activated_patches(model, img_path, patch_size = 448, stride = 100,
         x0, y0, x1, y1 = gen_coords(i, patch_size, stride, dim1, dim2)
         
         draw = ImageDraw.Draw(img_copy)
-        draw.rectangle([x0, y0, x1, y1], fill = (img_mean, img_mean, img_mean))
+        if rgb:
+            draw.rectangle([x0, y0, x1, y1], fill = (img_mean, img_mean, img_mean))
+        else:
+            draw.rectangle([x0, y0, x1, y1], fill = (img_mean))
         
-        occ_img_t = preprocess_image(img_copy).to(device)
+        occ_img_t = preprocess_image(img_copy, rgb = rgb).to(device)
         
         with torch.no_grad():
             out = model(occ_img_t)
@@ -129,11 +132,14 @@ def maximally_activated_patches(model, img_path, patch_size = 448, stride = 100,
         else:
             plot_idx = i
         
-        axs[plot_idx].imshow(np.asarray(img_copy.crop((x0, y0, x1, y1))))
+        if rgb:
+            axs[plot_idx].imshow(np.asarray(img_copy.crop((x0, y0, x1, y1))))
+        else:
+            axs[plot_idx].imshow(np.asarray(img_copy.crop((x0, y0, x1, y1))), cmap = 'gray')
         axs[plot_idx].set_yticks([])
         axs[plot_idx].set_xticks([])
 
-def saliency_map(model, img_path, figsize = (16, 16), device = 'cuda', save_path = None):
+def saliency_map(model, img_path, rgb = True, figsize = (16, 16), device = 'cuda', save_path = None):
     """
         Plots the gradient of the score of the predicted class with respect to image pixels
     """
@@ -141,8 +147,8 @@ def saliency_map(model, img_path, figsize = (16, 16), device = 'cuda', save_path
     model.eval()
     model.to(device)
     
-    img = Image.open(img_path).convert('RGB')
-    img_t = preprocess_image(img).to(device)
+    img = Image.open(img_path)
+    img_t = preprocess_image(img, rgb = rgb).to(device)
     img_np = scale(img_t.detach().cpu()[0].permute(1, 2, 0).numpy())
     img_t.requires_grad = True
     
@@ -154,7 +160,12 @@ def saliency_map(model, img_path, figsize = (16, 16), device = 'cuda', save_path
     saliency_img = saliency.detach().cpu().numpy()
     
     fig, axs = plt.subplots(1, 2, figsize = figsize)
-    axs[0].imshow(img_np)
+    
+    if rgb:
+        axs[0].imshow(img_np)
+    else:
+        axs[0].imshow(img_np, cmap = 'gray')
+        
     axs[1].imshow(saliency_img, cmap = 'gray')
     axs[0].set_yticks([])
     axs[0].set_xticks([])
@@ -172,7 +183,10 @@ def generate_image(model, target_class, epochs, min_prob, lr, weight_decay, step
         gradient ascent
     """
 
-    noise = init([1, 3, noise_size, noise_size]).to(device)
+    name, weights = next(model.named_parameters())
+    in_size = weights.size()[1]
+    
+    noise = init([1, in_size, noise_size, noise_size]).to(device)
     noise.requires_grad = True
     model = model.to(device)
     opt = torch.optim.SGD([noise], lr = lr, weight_decay = weight_decay)
@@ -195,9 +209,13 @@ def generate_image(model, target_class, epochs, min_prob, lr, weight_decay, step
         opt.step()
         scheduler.step()
     
+    rgb = in_size > 1
     fig, axs = plt.subplots(1, figsize = figsize)
-    img_np = postprocess_image(noise)
-    axs.imshow(img_np)
+    img_np = postprocess_image(noise, rgb = rgb)
+    if rgb:
+        axs.imshow(img_np)
+    else:
+        axs.imshow(img_np, cmap = 'gray')
     axs.set_xticks([])
     axs.set_yticks([])
 
@@ -207,13 +225,13 @@ def generate_image(model, target_class, epochs, min_prob, lr, weight_decay, step
     return noise
 
 def fool_model(model, img_path, target_class, epochs, min_prob, lr, step_size, gamma,   
-                        p_freq = 50, device = 'cuda', figsize = (6, 6), save_path = None):
+                        p_freq = 50, device = 'cuda', rgb = True, figsize = (6, 6), save_path = None):
     
     """
         Modifies a given image to have a high score for a specific class, similar to generate_image()
     """
 
-    orig_img = preprocess_image(img_path).to(device)
+    orig_img = preprocess_image(img_path, rgb = rgb).to(device)
     orig_img.requires_grad = True
     model = model.to(device)
     opt = torch.optim.SGD([orig_img], lr = lr)
@@ -237,8 +255,12 @@ def fool_model(model, img_path, target_class, epochs, min_prob, lr, step_size, g
         scheduler.step()
     
     fig, axs = plt.subplots(1, figsize = figsize)
-    img_np = postprocess_image(orig_img)
-    axs.imshow(img_np)
+    img_np = postprocess_image(orig_img, rgb = rgb)
+    
+    if rgb:    
+        axs.imshow(img_np)
+    else:
+        axs.imshow(img_np, cmap = 'gray')
     axs.set_xticks([])
     axs.set_yticks([])
 
@@ -248,13 +270,13 @@ def fool_model(model, img_path, target_class, epochs, min_prob, lr, step_size, g
     return orig_img
 
 def feature_inversion(model, modules, img_path, epochs, lr, step_size = 100, gamma = 0.6, mu = 1e-1, 
-                          device = 'cuda', figsize = (16, 16), save_path = None):
+                          device = 'cuda', rgb = True, figsize = (16, 16), save_path = None):
     
     """
         Reconstructs an image based on its feature representation at various modules
     """
 
-    orig_img = preprocess_image(img_path).to(device)
+    orig_img = preprocess_image(img_path, rgb = rgb).to(device)
     model = model.to(device)
     model.eval()
     recreated_imgs = []
@@ -266,7 +288,10 @@ def feature_inversion(model, modules, img_path, epochs, lr, step_size = 100, gam
     fig, axs = plt.subplots(1, len(recreated_imgs), figsize = figsize)
     
     for i in range(len(recreated_imgs)):
-        axs[i].imshow(postprocess_image(recreated_imgs[i]))
+        if rgb:
+            axs[i].imshow(postprocess_image(recreated_imgs[i], rgb = rgb))
+        else:
+            axs[i].imshow(postprocess_image(recreated_imgs[i], rgb = rgb), cmap = 'gray')
 
     if save_path:
         fig.savefig(save_path)
@@ -285,8 +310,10 @@ def feature_inversion_helper(model, module, orig_img, epochs, lr, step_size, gam
     handle = module.register_forward_hook(hook_fn)
     _ = model(orig_img)
     orig_features = acts[0]
+    name, weights = next(model.named_parameters())
+    in_size = weights.size()[1]
     
-    noise = init([1, 3, noise_size, noise_size]).to(device)
+    noise = init([1, in_size, noise_size, noise_size]).to(device)
     noise.requires_grad = True
     opt = torch.optim.SGD([noise], lr = lr)
     scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size, gamma = gamma)
@@ -305,15 +332,53 @@ def feature_inversion_helper(model, module, orig_img, epochs, lr, step_size, gam
     handle.remove()
     return noise
 
+def grad_cam(model, module, img_path, class_id, rgb = True, device = 'cuda', alpha = 0.6, 
+                 figsize = (16, 16), save_path = None):
+    
+    acts = [0]
+    grads = [0]
+    
+    def f_hook(self, input, output):
+        acts[0] = output
 
-def deep_dream(model, module, img_path, epochs, lr, step_size = 100, gamma = 0.6, device = 'cuda', figsize = (12, 12), 
-                    save_path = None):
+    def b_hook(self, grad_in, grad_out):
+        grads[0] = grad_out
+    
+    h1 = module.register_forward_hook(f_hook)
+    h2 = module.register_backward_hook(b_hook)
+    
+    img = Image.open(img_path)
+    img_t = preprocess_image(img_path, rgb = rgb).to(device)
+    model.to(device)
+    outs = model(img_t)
+    h1.remove()
+    h2.remove()
+    outs[0, class_id].backward()
+    
+    gap = torch.mean(grads[0][0].view(grads[0][0].size(0), grads[0][0].size(1), -1), dim = 2)
+    acts = acts[0][0]
+    gradcam = torch.nn.ReLU()(torch.sum(gap[0].reshape((gap.size()[1], 1, 1)) * acts, dim = 0))
+    arr = transforms.Resize((img.size[1], img.size[0]))(gradcam.unsqueeze(0))
+    gradcam_img = arr.detach().cpu().permute((1, 2, 0)).squeeze(-1)
+
+    fig, axs = plt.subplots(1, figsize = figsize)
+    
+    axs.imshow(np.asarray(img))
+    axs.imshow(gradcam_img, alpha = alpha)
+    axs.set_xticks([])
+    axs.set_yticks([])
+    
+    if save_path:
+        fig.savefig(save_path)
+
+def deep_dream(model, module, img_path, epochs, lr, step_size = 100, gamma = 0.6, device = 'cuda', rgb = True,
+                   figsize = (12, 12), save_path = None):
 
     """
         Modifies the input image to maximize activation at a specific module
     """
     
-    img_t = preprocess_image(img_path).to(device)
+    img_t = preprocess_image(img_path, rgb = rgb).to(device)
     img_t.requires_grad = True
     opt = torch.optim.SGD([img_t], lr = lr)
     scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size, gamma = gamma)
@@ -337,8 +402,13 @@ def deep_dream(model, module, img_path, epochs, lr, step_size = 100, gamma = 0.6
     handle.remove()
     
     fig, axs = plt.subplots(1, figsize = figsize)
-    img_np = postprocess_image(img_t)
-    axs.imshow(img_np)
+    img_np = postprocess_image(img_t, rgb = rgb)
+    
+    if rgb:
+        axs.imshow(img_np)
+    else:
+        axs.imshow(img_np, cmap = 'gray')
+        
     axs.set_xticks([])
     axs.set_yticks([])
 

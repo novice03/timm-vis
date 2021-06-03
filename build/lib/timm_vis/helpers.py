@@ -10,20 +10,34 @@ pre_transforms = transforms.Compose([transforms.ToTensor(),
 post_transforms = transforms.Compose([transforms.Normalize(mean = [0, 0, 0], std = [1/0.229, 1/0.224, 1/0.225]),                 
                               transforms.Normalize(mean = [-0.485, -0.456, -0.406], std = [1, 1, 1])])
 
+pre_transforms_gray = transforms.Compose([transforms.ToTensor(),
+                                 transforms.Normalize(mean = [0.449], std = [0.226]),                 
+                                 transforms.Resize((224, 224))])
+
+post_transforms_gray = transforms.Compose([transforms.Normalize(mean = [0], std = [1/0.226]),                 
+                              transforms.Normalize(mean = [-0.449], std = [1])])
+
 def scale(arr):
     return ((arr - arr.min()) * (1/(arr.max() - arr.min()) * 255)).astype('uint8')
 
-def preprocess_image(img_path):
+def preprocess_image(img_path, rgb = True):
     if isinstance(img_path, str):
-        img = Image.open(img_path).convert('RGB')
+        img = Image.open(img_path)
     else:
         img = img_path
     
-    img_t = pre_transforms(img).unsqueeze(0)
+    if rgb:
+        img_t = pre_transforms(img).unsqueeze(0)
+    else:
+        img_t = pre_transforms_gray(img).unsqueeze(0)
     return img_t
 
-def postprocess_image(img_t):
-    img_t = post_transforms(img_t[0])
+def postprocess_image(img_t, rgb = True):
+    if rgb:
+        img_t = post_transforms(img_t[0])
+    else:
+        img_t = post_transforms_gray(img_t[0])        
+        
     img_np = img_t.detach().cpu().numpy().transpose(1,2,0)
     img_np = scale(np.clip(img_np, 0, 1))
     
